@@ -1,0 +1,69 @@
+/*
+ * ImageUrlLoader.cpp
+ *
+ *  Created on: Mar 20, 2013
+ *      Author: rsarmentopeixoto
+ */
+
+#include "ImageUrlLoader.h"
+
+ImageUrlLoader::ImageUrlLoader() {
+}
+
+ImageUrlLoader::~ImageUrlLoader() {
+}
+
+QString ImageUrlLoader::imageUrl() {
+	return m_imageUrl;
+}
+
+void ImageUrlLoader::setImageUrl(const QString& newUrl) {
+	if (m_imageUrl != newUrl) {
+		m_imageUrl = newUrl;
+		QStringList splitList = m_imageUrl.split("/");
+		QString fileName(splitList.at(splitList.size() - 1));
+		m_imagePath = QDir::currentPath() + "/tmp/" + fileName;
+		if (QFile::exists(m_imagePath)) {
+//			qDebug() << "Reusing image...";
+			emit this->imageDone(m_imagePath);
+		} else {
+			m_manager = new QNetworkAccessManager;
+			this->loadImageUrl();
+		}
+	}
+}
+
+void ImageUrlLoader::loadImageUrl() {
+	if (m_manager) {
+		qDebug() << "Load: " << qPrintable(m_imageUrl);
+		connect(m_manager, SIGNAL(dataReady(QByteArray)), this,
+				SLOT(imageLoaded(QByteArray)));
+		//m_rpxNetwork.loadURL(QUrl(m_imageUrl));
+		connect(m_manager, SIGNAL(finished(QNetworkReply*)), this,
+				SLOT(replyFinished(QNetworkReply*)));
+		m_manager->get(QNetworkRequest(m_imageUrl));
+	}
+
+}
+
+void ImageUrlLoader::replyFinished(QNetworkReply * reply) {
+	disconnect(m_manager, SIGNAL(finished(QNetworkReply*)), this,
+			SLOT(replyFinished(QNetworkReply*)));
+
+	QStringList splitList = m_imageUrl.split("/");
+	QString fileName(splitList.at(splitList.size() - 1));
+	m_file = new QFile("tmp/" + fileName);
+	if (!m_file->open(QIODevice::WriteOnly | QIODevice::Append)) {
+		qDebug() << "failed to open file";
+		return;
+	}
+	m_file->write(reply->readAll());
+	m_file->flush();
+	m_file->close();
+
+	//Its parent MUST have a imageSource property for being set
+	this->parent()->setProperty("imageSource", QVariant::fromValue(QUrl(m_imagePath)));
+	emit this->imageDone(m_imagePath);
+	delete m_manager;
+	m_manager = 0;
+}
